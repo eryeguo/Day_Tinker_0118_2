@@ -1,0 +1,160 @@
+apply plugin: 'com.android.application'
+
+android {
+    signingConfigs {
+        release {
+            keyAlias 'key0'
+            keyPassword '123456'
+            storeFile file('E:/AndroidStudiocode/MyApplicationDayi/Day_Tinker_0118_2/app/tinker.jks')
+            storePassword '123456'
+        }
+    }
+    compileSdkVersion 26
+    buildToolsVersion "26.0.1"
+    defaultConfig {
+        applicationId "pingan.com.day_tinker_0118_2"
+        minSdkVersion 19
+        targetSdkVersion 26
+        versionCode 1
+        versionName "1.0"
+        testInstrumentationRunner "android.support.test.runner.AndroidJUnitRunner"
+    }
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            signingConfig signingConfigs.release
+        }
+    }
+}
+
+dependencies {
+    compile fileTree(include: ['*.jar'], dir: 'libs')
+    androidTestCompile('com.android.support.test.espresso:espresso-core:2.2.2', {
+        exclude group: 'com.android.support', module: 'support-annotations'
+    })
+    compile 'com.android.support:appcompat-v7:26.+'
+    compile 'com.android.support.constraint:constraint-layout:1.0.2'
+    testCompile 'junit:junit:4.12'
+    //可选，用于生成application类
+    provided 'com.tencent.tinker:tinker-android-anno:1.9.2'
+    //tinker的核心库
+    compile 'com.tencent.tinker:tinker-android-lib:1.9.2'
+}
+def bakPath = file("${buildDir}/bakApk/")
+
+ext {
+    tinkerOldApkPath = "${bakPath}/app-release-0118-19-01-30.apk"
+    tinkerEnabled = true
+//    tinkerApplyMappingPath = "${bakPath}/"
+    tinkerApplyResourcePath = "${bakPath}/app-release-0118-19-01-30-R.txt"
+}
+
+
+def getOldApkPath() {
+    return ext.tinkerOldApkPath
+}
+
+def buildWithTinker() {
+    return ext.tinkerEnabled
+}
+
+def getApplyMappingPath() {
+    return ext.tinkerApplyMappingPath
+}
+
+def getApplyResourceMappingPath() {
+    return ext.tinkerApplyResourcePath
+}
+
+def getTinkerIdValue() {
+    return "tinker_id_b168b32"
+}
+
+
+if (buildWithTinker()) {
+    //apply tinker插件
+    apply plugin: 'com.tencent.tinker.patch'
+    tinkerPatch {
+        tinkerEnable = buildWithTinker()
+        oldApk = getOldApkPath()
+        ignoreWarning = false
+        useSign = true
+
+        buildConfig {
+//        applyMapping = getApplyMappingPath()
+            applyResourceMapping = getApplyResourceMappingPath()
+            tinkerId = getTinkerIdValue()
+            keepDexApply = false
+            isProtectedApp = false
+        }
+
+        dex {
+            dexMode = "jar"
+            pattern = ["classes*.dex", "assets/secondary-dex-?.jar"]
+            loader = ["com.bwie.tinkerproject.MyTinkerApplication"]
+        }
+
+        lib {
+            pattern = ["lib/*/*.so"]
+        }
+
+        res {
+            pattern = ["res/*", "assets/*", "resources.arsc", "AndroidManifest.xml"]
+            ignoreChange = ["assets/sample_meta.txt"]
+            largeModSize = 100
+        }
+
+        packageConfig {
+            configField("version_name", "1")
+            configField("change_log", "添加了一些功能")
+        }
+    }
+
+    List<String> flavors = new ArrayList<>();
+    project.android.productFlavors.each { flavor ->
+        flavors.add(flavor.name)
+    }
+    boolean hasFlavors = flavors.size() > 0
+    def date = new Date().format("MMdd-HH-mm-ss")
+/**
+ * bak apk and mapping
+ */
+    android.applicationVariants.all { variant ->
+        /**
+         * task type, you want to bak
+         */
+        def taskName = variant.name
+
+        tasks.all {
+            if ("assemble${taskName.capitalize()}".equalsIgnoreCase(it.name)) {
+
+                it.doLast {
+                    copy {
+                        def fileNamePrefix = "${project.name}-${variant.baseName}"
+                        def newFileNamePrefix = hasFlavors ? "${fileNamePrefix}" : "${fileNamePrefix}-${date}"
+
+                        def destPath = hasFlavors ? file("${bakPath}/${project.name}-${date}/${variant.flavorName}") : bakPath
+                        from variant.outputs.first().outputFile
+                        into destPath
+                        rename { String fileName ->
+                            fileName.replace("${fileNamePrefix}.apk", "${newFileNamePrefix}.apk")
+                        }
+
+                        from "${buildDir}/outputs/mapping/${variant.dirName}/mapping.txt"
+                        into destPath
+                        rename { String fileName ->
+                            fileName.replace("mapping.txt", "${newFileNamePrefix}-mapping.txt")
+                        }
+
+                        from "${buildDir}/intermediates/symbols/${variant.dirName}/R.txt"
+                        into destPath
+                        rename { String fileName ->
+                            fileName.replace("R.txt", "${newFileNamePrefix}-R.txt")
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
